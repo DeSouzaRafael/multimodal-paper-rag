@@ -1,0 +1,33 @@
+[project]
+name = "multimodal-paper-rag"
+version = "0.1.0"
+description = "Multimodal RAG over scientific papers — text, tables, and figures"
+requires-python = ">=3.11"
+dependencies = [
+    "unstructured[pdf]>=0.16",
+    "sentence-transformers>=3.0",
+    "open-clip-torch>=2.26",
+    "qdrant-client>=1.9",
+    "anthropic>=0.34",
+    "rank-bm25>=0.2",
+    "ragas>=0.1",
+    "streamlit>=1.36",
+    "langfuse>=2.0",
+    "python-dotenv>=1.0",
+    "torch>=2.3",
+    "pillow>=10.0",
+    "pandas>=2.0",
+    "arxiv>=2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "jupyter>=1.0",
+    "ipykernel>=6.0",
+    "notebook>=7.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
