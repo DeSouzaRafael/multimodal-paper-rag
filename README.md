@@ -1,8 +1,18 @@
+---
+title: multimodal-paper-rag
+colorFrom: blue
+colorTo: purple
+sdk: streamlit
+sdk_version: "1.36.0"
+app_file: app.py
+pinned: false
+---
+
 # multimodal-paper-rag
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue?logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Status](https://img.shields.io/badge/status-in%20progress-orange)
+![Status](https://img.shields.io/badge/status-complete-brightgreen)
 ![Qdrant](https://img.shields.io/badge/vector--store-Qdrant-red?logo=qdrant&logoColor=white)
 ![Claude](https://img.shields.io/badge/LLM-Claude%20API-blueviolet)
 
@@ -56,6 +66,70 @@ Most RAG tutorials treat PDFs as plain text dumps. That breaks badly on real pap
 ├── notebooks/          # exploration, chunking comparison, eval results
 └── tests/
 ```
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Ingestion                               │
+│                                                                 │
+│  PDF ──► parser.py ──► [text | table | image+caption]           │
+│                │                                                │
+│                ▼                                                │
+│          chunker.py  (fixed / recursive / semantic)             │
+│                │                                                │
+│       ┌────────┴─────────┐                                      │
+│       ▼                  ▼                                      │
+│  TextEmbedder       ImageEmbedder                               │
+│  (bge-m3)           (CLIP ViT-L/14)                             │
+│       └────────┬─────────┘                                      │
+│                ▼                                                │
+│          Qdrant (multi-vector: text + image)                    │
+└─────────────────────────────────────────────────────────────────┘
+                          │
+                          │  query time
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         Retrieval                               │
+│                                                                 │
+│  query ──► bge-m3 embed ──► dense search ─────-────┐            │
+│       └──► BM25 ──────────► sparse search ─────────┤            │
+│                                                    ▼            │
+│                                            RRF fusion           │
+│                                                    │            │
+│                                    (optional) reranker          │
+│                                     bge-reranker-v2-m3          │
+└─────────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        Generation                               │
+│                                                                 │
+│  chunks + query ──► Claude API ──► answer with [N] citations    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Design decisions
+
+**Image indexing: multi-vector (CLIP + caption)**
+Two alternatives considered:
+- *Caption + vision model description* — cheaper, no GPU needed, but loses visual similarity search entirely
+- *CLIP embedding + caption embedding as separate named vectors* — chosen; Qdrant multi-vector lets you query either independently or combined; CLIP runs locally so no extra API cost
+
+The caption embedding handles text queries ("show results for dataset X"), the CLIP embedding handles visual queries (searching by image similarity). Reranking operates on the text side only.
+
+**Chunking default: recursive**
+Fixed-size is fast but splits mid-sentence constantly, which hurts faithfulness. Semantic chunking produces cleaner boundaries but is slow (requires embedding every sentence) and adds a model dependency at ingest time. Recursive with paragraph → sentence → word fallback gives 90% of semantic quality at fixed-size speed — good default, with semantic available as an opt-in flag.
+
+**Hybrid search: RRF over learned weights**
+Score-based fusion requires normalising BM25 and cosine scores to the same range, which is non-trivial and sensitive to corpus size. RRF sidesteps normalisation entirely by using only rank positions. The `k=60` constant is from the original RRF paper and is robust across domains. No tuning needed.
+
+**Reranker as optional layer**
+Cross-encoders are accurate but slow — `bge-reranker-v2-m3` processes pairs sequentially and adds ~300ms per query at top-20. Made opt-in via `mode=hybrid+rerank` so the UI can compare live.
 
 ---
 
